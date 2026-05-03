@@ -1,0 +1,122 @@
+services:
+  mysql-patient:
+    image: mysql:8.0
+    container_name: mysql-patient
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: patientdb
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mysql-appointment:
+    image: mysql:8.0
+    container_name: mysql-appointment
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: appointmentdb
+    ports:
+      - "3307:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+
+  patient-service:
+    build:
+      context: ./healthcare-patient-service/patient-service
+    container_name: patient-service
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-patient:3306/patientdb?createDatabaseIfNotExist=true
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: root
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: "true"
+    depends_on:
+      mysql-patient:
+        condition: service_healthy
+
+  appointment-service:
+    build:
+      context: ./healthcare-appointment-service/appointment-service
+    container_name: appointment-service
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-appointment:3306/appointmentdb?createDatabaseIfNotExist=true
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: root
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: "true"
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      PATIENT_SERVICE_URL: http://patient-service:8081
+    depends_on:
+      mysql-appointment:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      patient-service:
+        condition: service_started
+
+  notification-service:
+    build:
+      context: ./healthcare-notification-service/notification-service
+    container_name: notification-service
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_KAFKA_CONSUMER_GROUP_ID: notification-group
+      SPRING_KAFKA_CONSUMER_AUTO_OFFSET_RESET: earliest
+    depends_on:
+      kafka:
+        condition: service_started
+
+  api-gateway:
+    build:
+      context: ./healthcare-api-gateway/api-gateway
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_CLOUD_GATEWAY_MVC_ROUTES_0_ID: patient-service
+      SPRING_CLOUD_GATEWAY_MVC_ROUTES_0_URI: http://patient-service:8081
+      SPRING_CLOUD_GATEWAY_MVC_ROUTES_0_PREDICATES_0: Path=/api/patients/**
+      SPRING_CLOUD_GATEWAY_MVC_ROUTES_1_ID: appointment-service
+      SPRING_CLOUD_GATEWAY_MVC_ROUTES_1_URI: http://appointment-service:8082
+      SPRING_CLOUD_GATEWAY_MVC_ROUTES_1_PREDICATES_0: Path=/api/appointments/**
+    depends_on:
+      patient-service:
+        condition: service_started
+      appointment-service:
+        condition: service_started

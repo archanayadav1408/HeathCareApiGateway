@@ -1,0 +1,87 @@
+# --- MySQL for Patient Service ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql-patient
+  namespace: healthcare
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql-patient
+  template:
+    metadata:
+      labels:
+        app: mysql-patient
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          ports:
+            - containerPort: 3306
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              value: root
+            - name: MYSQL_DATABASE
+              value: patientdb
+          readinessProbe:
+            exec:
+              command: ["mysqladmin", "ping", "-h", "localhost"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-patient
+  namespace: healthcare
+spec:
+  selector:
+    app: mysql-patient
+  ports:
+    - port: 3306
+      targetPort: 3306
+---
+# --- MySQL for Appointment Service ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql-appointment
+  namespace: healthcare
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql-appointment
+  template:
+    metadata:
+      labels:
+        app: mysql-appointment
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          ports:
+            - containerPort: 3306
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              value: root
+            - name: MYSQL_DATABASE
+              value: appointmentdb
+          readinessProbe:
+            exec:
+              command: ["mysqladmin", "ping", "-h", "localhost"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-appointment
+  namespace: healthcare
+spec:
+  selector:
+    app: mysql-appointment
+  ports:
+    - port: 3306
+      targetPort: 3306
